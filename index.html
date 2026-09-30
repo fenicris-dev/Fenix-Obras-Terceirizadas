@@ -1,5 +1,5 @@
 <!--
-    Fênix Controle de Serviços Terceirizados — v1.8
+    Fênix Controle de Serviços Terceirizados — v2.0
     (antes chamado "Controle de Obras Terceirizadas" até a v1.7)
     Padrão visual Fênix + login/empresa compartilhados com o Fênix Core + Firestore
     Slogan: "Cada serviço sob controle, do início ao pagamento."
@@ -11,9 +11,9 @@
     v1.3: mensagens de erro de login/sincronização agora mostram o código real do Firebase
     v1.4: indicador visual de status de conexão (bolinha verde/amarela/vermelha) no header
     v1.5: removido bloco duplicado de Exportar/Importar Dados que aparecia junto com o do Dashboard
-    v1.6: aponta para o Fênix Core v1.9 (correção do bug usuariosEmpresa vs usuarios_empresa)
+    v1.6: aponta para o Fênix Core v2.0 (correção do bug usuariosEmpresa vs usuarios_empresa)
     v1.7: passou a apontar para o endereço fixo do Core (fenix-core.js, sem versão no nome)
-    v1.8: renomeado para "Controle de Serviços Terceirizados" + slogan adicionado
+    v2.0: renomeado para "Controle de Serviços Terceirizados" + slogan adicionado
 -->
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -112,7 +112,7 @@
             </form>
             <p class="text-center text-xs text-slate-500 mt-5">Não tem conta? <a href="#" onclick="alert('Solicite acesso pelo WhatsApp (79) 9 9968-0880.'); return false;" style="color:var(--fx-blue);" class="font-semibold">Solicitar acesso</a></p>
         </div>
-        <p class="text-center text-white/50 text-[10px] mt-4">Fênix Core · mesma conta do Fênix Ativos · v1.8</p>
+        <p class="text-center text-white/50 text-[10px] mt-4">Fênix Core · mesma conta do Fênix Ativos · v2.0</p>
     </div>
 </div>
 
@@ -134,6 +134,7 @@
             <div id="statusConexaoWrap" class="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-full px-2.5 py-1" title="Status da conexão com o Fênix Core">
                 <span id="statusDot" class="w-2 h-2 rounded-full bg-slate-400 shrink-0"></span>
                 <span id="statusTexto" class="text-white/70 text-[10px] font-medium hidden sm:inline">Local</span>
+                <span id="statusFilaBadge" onclick="processarFila()" title="Itens aguardando sincronizar — clique pra tentar agora" class="hidden ml-0.5 bg-amber-400 text-slate-900 text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center cursor-pointer">0</span>
             </div>
             <button title="Notificações" class="text-white/70 hover:text-white">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
@@ -384,7 +385,7 @@
                 <a href="https://instagram.com/fenixsolucoestecnologicas" target="_blank" class="hover:text-slate-600 font-medium">Fênix Soluções Tecnológicas</a>
                 &nbsp;·&nbsp;
                 <a href="https://wa.me/5579999680880" target="_blank" class="hover:text-slate-600">&lt;Cristiano Fênix/&gt;</a>
-                &nbsp;·&nbsp; v1.8
+                &nbsp;·&nbsp; v2.0
             </p>
         </footer>
     </div>
@@ -513,7 +514,7 @@
 </div>
 
 <script>
-    const FENIX_CORE_URL = 'https://fenicris-dev.github.io/Fenix-Levantamento-Tecnico/fenix-core.js';
+    const FENIX_CORE_URL = 'https://fenicris-dev.github.io/Fenix-Core/fenix-core.js';
     const NOME_APP = 'fenix-obras-terceirizadas';
 
     // CLIENTES BASE PADRÃO (seed inicial — só é enviado ao Firestore se a empresa ainda não tiver nenhum)
@@ -676,8 +677,67 @@
         }
     }
 
+    // ===================== FILA DE RETRY (offline-first de verdade) =====================
+    // Toda gravação que falhar por falta de conexão fica registrada aqui (localStorage),
+    // e é reenviada automaticamente assim que a internet voltar ou no próximo login —
+    // sem isso, uma edição feita offline podia se perder ao ser sobrescrita pelos dados
+    // da nuvem na próxima hidratação.
+    const CHAVE_FILA = 'servicos_terceirizados_fila_sync';
+
+    function lerFila() {
+        try { return JSON.parse(localStorage.getItem(CHAVE_FILA)) || []; }
+        catch { return []; }
+    }
+    function gravarFila(fila) {
+        localStorage.setItem(CHAVE_FILA, JSON.stringify(fila));
+    }
+    // tipo: 'salvarObra' | 'excluirObra' | 'salvarCliente'. chave identifica o registro
+    // (id da obra/cliente) — uma nova entrada substitui qualquer pendência antiga do
+    // mesmo registro, pra não reenviar versões velhas fora de ordem.
+    function adicionarNaFila(tipo, chave, payload) {
+        const fila = lerFila().filter(item => !(item.tipo === tipo && item.chave === chave));
+        fila.push({ tipo, chave, payload, tentativas: 0 });
+        gravarFila(fila);
+        atualizarBadgeFila();
+    }
+    function removerDaFila(tipo, chave) {
+        gravarFila(lerFila().filter(item => !(item.tipo === tipo && item.chave === chave)));
+        atualizarBadgeFila();
+    }
+    function atualizarBadgeFila() {
+        const n = lerFila().length;
+        const badge = document.getElementById('statusFilaBadge');
+        if (badge) badge.classList.toggle('hidden', n === 0);
+        if (badge) badge.innerText = n;
+    }
+    let processandoFila = false;
+    async function processarFila() {
+        if (processandoFila || !coreDisponivel || !obrasModule || !clientesModule) return;
+        processandoFila = true;
+        const fila = lerFila();
+        for (const item of fila) {
+            try {
+                if (item.tipo === 'salvarObra') await obrasModule.salvar(item.payload);
+                else if (item.tipo === 'excluirObra') await obrasModule.excluir(item.chave);
+                else if (item.tipo === 'salvarCliente') await clientesModule.salvar(item.payload);
+                removerDaFila(item.tipo, item.chave);
+            } catch (err) {
+                console.error('Falha ao reenviar item da fila:', item, err);
+                // Para no primeiro que falhar — provavelmente ainda offline, tenta de novo depois
+                break;
+            }
+        }
+        processandoFila = false;
+        if (lerFila().length === 0) esconderBannerErro();
+    }
+    window.addEventListener('online', processarFila);
+
     async function hidratarDadosRemotos() {
         try {
+            // Primeiro empurra qualquer pendência local (de uma sessão offline anterior)
+            // antes de puxar o retrato da nuvem, pra não perder edição nenhuma.
+            await processarFila();
+
             const [obrasRemotas, clientesRemotos] = await Promise.all([
                 obrasModule.listar(),
                 clientesModule.listar()
@@ -707,22 +767,35 @@
         }
     }
 
-    // Push individual pro Firestore a cada alteração (write-through). Se falhar, avisa mas
-    // não bloqueia o uso local — os dados continuam salvos no localStorage normalmente.
+    // Push individual pro Firestore a cada alteração (write-through). Se falhar — geralmente
+    // por estar offline — a mudança entra na fila de retry e é reenviada sozinha depois;
+    // nunca bloqueia o uso local, os dados continuam salvos no localStorage normalmente.
     async function sincronizarObraRemota(obra) {
-        if (!coreDisponivel || !obrasModule) return;
-        try { await obrasModule.salvar(obra); esconderBannerErro(); }
-        catch (err) { console.error(err); mostrarBannerErro('⚠️ Não foi possível sincronizar esta obra com o Fênix Core. Ela está salva só neste aparelho.'); }
+        if (!coreDisponivel || !obrasModule) { adicionarNaFila('salvarObra', obra.id, obra); return; }
+        try { await obrasModule.salvar(obra); removerDaFila('salvarObra', obra.id); esconderBannerErro(); }
+        catch (err) {
+            console.error(err);
+            adicionarNaFila('salvarObra', obra.id, obra);
+            mostrarBannerErro('⚠️ Sem conexão — esta obra está salva neste aparelho e será sincronizada assim que a internet voltar.');
+        }
     }
     async function excluirObraRemota(obraId) {
-        if (!coreDisponivel || !obrasModule) return;
-        try { await obrasModule.excluir(obraId); esconderBannerErro(); }
-        catch (err) { console.error(err); mostrarBannerErro('⚠️ Não foi possível excluir esta obra no Fênix Core. Tente novamente com internet.'); }
+        if (!coreDisponivel || !obrasModule) { adicionarNaFila('excluirObra', obraId, null); return; }
+        try { await obrasModule.excluir(obraId); removerDaFila('excluirObra', obraId); esconderBannerErro(); }
+        catch (err) {
+            console.error(err);
+            adicionarNaFila('excluirObra', obraId, null);
+            mostrarBannerErro('⚠️ Sem conexão — a exclusão será aplicada no Fênix Core assim que a internet voltar.');
+        }
     }
     async function sincronizarClienteRemoto(cliente) {
-        if (!coreDisponivel || !clientesModule) return;
-        try { await clientesModule.salvar(cliente); esconderBannerErro(); }
-        catch (err) { console.error(err); mostrarBannerErro('⚠️ Não foi possível sincronizar este cliente com o Fênix Core. Ele está salvo só neste aparelho.'); }
+        if (!coreDisponivel || !clientesModule) { adicionarNaFila('salvarCliente', cliente.id, cliente); return; }
+        try { await clientesModule.salvar(cliente); removerDaFila('salvarCliente', cliente.id); esconderBannerErro(); }
+        catch (err) {
+            console.error(err);
+            adicionarNaFila('salvarCliente', cliente.id, cliente);
+            mostrarBannerErro('⚠️ Sem conexão — este cliente está salvo neste aparelho e será sincronizado assim que a internet voltar.');
+        }
     }
 
     function fazerLogout() {
@@ -739,6 +812,7 @@
     function entrarNoApp() {
         document.getElementById('appRoot').classList.remove('hidden');
         salvarLocalStorage();
+        atualizarBadgeFila();
         mudarView('dashboard');
     }
 
