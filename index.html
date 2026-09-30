@@ -1,13 +1,26 @@
 <!--
-    Fênix Controle de Obras Terceirizadas — v1.2
+    Fênix Controle de Serviços Terceirizados — v1.8
+    (antes chamado "Controle de Obras Terceirizadas" até a v1.7)
     Padrão visual Fênix + login/empresa compartilhados com o Fênix Core + Firestore
+    Slogan: "Cada serviço sob controle, do início ao pagamento."
+
+    Changelog:
+    v1.0: padronização visual Fênix (header, sidebar, cores, rodapé)
+    v1.1: status de pagamento por obra (Pendente/Parcial/Pago)
+    v1.2: Dashboard com contadores de status de obra e de pagamento; integração real com o Fênix Core (login, empresa, Firestore)
+    v1.3: mensagens de erro de login/sincronização agora mostram o código real do Firebase
+    v1.4: indicador visual de status de conexão (bolinha verde/amarela/vermelha) no header
+    v1.5: removido bloco duplicado de Exportar/Importar Dados que aparecia junto com o do Dashboard
+    v1.6: aponta para o Fênix Core v1.9 (correção do bug usuariosEmpresa vs usuarios_empresa)
+    v1.7: passou a apontar para o endereço fixo do Core (fenix-core.js, sem versão no nome)
+    v1.8: renomeado para "Controle de Serviços Terceirizados" + slogan adicionado
 -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Controle de Obras Terceirizadas | Fênix</title>
+    <title>Controle de Serviços Terceirizados | Fênix</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -63,8 +76,9 @@
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none"><path d="M12 2 L20 8 V16 L12 22 L4 16 V8 Z" stroke="#9E8A06" stroke-width="1.6"/><path d="M12 7 L16 10 V14 L12 17 L8 14 V10 Z" fill="#9E8A06"/></svg>
         </div>
         <div>
-            <p class="text-white font-bold text-lg tracking-wide">Controle de Obras Terceirizadas</p>
+            <p class="text-white font-bold text-lg tracking-wide">Controle de Serviços Terceirizados</p>
             <p class="text-white/60 text-xs mt-1">Fênix Soluções Tecnológicas</p>
+            <p class="text-white/40 text-[11px] italic mt-0.5">Cada serviço sob controle, do início ao pagamento.</p>
         </div>
         <div class="w-48 fx-splash-bar"></div>
     </div>
@@ -78,8 +92,9 @@
                 <div class="w-14 h-14 rounded-xl flex items-center justify-center mb-3" style="background:var(--fx-header);">
                     <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M12 2 L20 8 V16 L12 22 L4 16 V8 Z" stroke="#9E8A06" stroke-width="1.6"/><path d="M12 7 L16 10 V14 L12 17 L8 14 V10 Z" fill="#9E8A06"/></svg>
                 </div>
-                <h1 class="text-lg font-bold" style="color:var(--fx-text);">Controle de Obras Terceirizadas</h1>
+                <h1 class="text-lg font-bold" style="color:var(--fx-text);">Controle de Serviços Terceirizados</h1>
                 <p class="text-xs text-slate-500">Fênix Soluções Tecnológicas</p>
+                <p class="text-[11px] text-slate-400 italic mt-0.5">Cada serviço sob controle, do início ao pagamento.</p>
             </div>
             <form id="formLogin" onsubmit="fazerLogin(event)" class="space-y-3">
                 <div>
@@ -97,7 +112,7 @@
             </form>
             <p class="text-center text-xs text-slate-500 mt-5">Não tem conta? <a href="#" onclick="alert('Solicite acesso pelo WhatsApp (79) 9 9968-0880.'); return false;" style="color:var(--fx-blue);" class="font-semibold">Solicitar acesso</a></p>
         </div>
-        <p class="text-center text-white/50 text-[10px] mt-4">Fênix Core · mesma conta do Fênix Ativos · v1.2</p>
+        <p class="text-center text-white/50 text-[10px] mt-4">Fênix Core · mesma conta do Fênix Ativos · v1.8</p>
     </div>
 </div>
 
@@ -111,11 +126,15 @@
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2 L20 8 V16 L12 22 L4 16 V8 Z" stroke="#9E8A06" stroke-width="1.6"/><path d="M12 7 L16 10 V14 L12 17 L8 14 V10 Z" fill="#9E8A06"/></svg>
             </div>
             <div class="leading-tight">
-                <p class="text-white font-bold text-sm md:text-base">Controle de Obras Terceirizadas</p>
+                <p class="text-white font-bold text-sm md:text-base">Controle de Serviços Terceirizados</p>
                 <p class="text-white/50 text-[10px] hidden sm:block">Fênix Soluções Tecnológicas</p>
             </div>
         </div>
         <div class="flex items-center gap-4">
+            <div id="statusConexaoWrap" class="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-full px-2.5 py-1" title="Status da conexão com o Fênix Core">
+                <span id="statusDot" class="w-2 h-2 rounded-full bg-slate-400 shrink-0"></span>
+                <span id="statusTexto" class="text-white/70 text-[10px] font-medium hidden sm:inline">Local</span>
+            </div>
             <button title="Notificações" class="text-white/70 hover:text-white">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
             </button>
@@ -176,13 +195,6 @@
     <!-- MAIN -->
     <div class="md:ml-56 pt-16 pb-24 md:pb-6 min-h-screen flex flex-col">
         <div class="max-w-7xl w-full mx-auto p-4 flex-1">
-
-            <!-- Botões utilitários (desktop) -->
-            <div class="hidden md:flex flex-wrap justify-end gap-2 mb-4 no-print">
-                <button onclick="exportarDados()" title="Baixar arquivo de backup" class="fx-btn-secondary px-3 py-2 rounded-md font-semibold text-xs flex items-center gap-1">📥 Exportar Dados</button>
-                <button onclick="document.getElementById('inputImportar').click()" title="Carregar arquivo de dados" class="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 px-3 py-2 rounded-md font-semibold text-xs flex items-center gap-1">📤 Importar Dados</button>
-                <input type="file" id="inputImportar" accept=".json" onchange="importarDados(event)" class="hidden">
-            </div>
 
             <!-- VIEW: DASHBOARD -->
             <div id="view-dashboard" class="fx-view active">
@@ -372,7 +384,7 @@
                 <a href="https://instagram.com/fenixsolucoestecnologicas" target="_blank" class="hover:text-slate-600 font-medium">Fênix Soluções Tecnológicas</a>
                 &nbsp;·&nbsp;
                 <a href="https://wa.me/5579999680880" target="_blank" class="hover:text-slate-600">&lt;Cristiano Fênix/&gt;</a>
-                &nbsp;·&nbsp; v1.2
+                &nbsp;·&nbsp; v1.8
             </p>
         </footer>
     </div>
@@ -501,7 +513,7 @@
 </div>
 
 <script>
-    const FENIX_CORE_URL = './fenix-core-v1.8.js';
+    const FENIX_CORE_URL = 'https://fenicris-dev.github.io/Fenix-Levantamento-Tecnico/fenix-core.js';
     const NOME_APP = 'fenix-obras-terceirizadas';
 
     // CLIENTES BASE PADRÃO (seed inicial — só é enviado ao Firestore se a empresa ainda não tiver nenhum)
@@ -530,6 +542,22 @@
     let empresaAtual = null;
     let coreDisponivel = false;
 
+    function atualizarStatusConexao(estado) {
+        const dot = document.getElementById('statusDot');
+        const texto = document.getElementById('statusTexto');
+        const wrap = document.getElementById('statusConexaoWrap');
+        if (!dot || !texto || !wrap) return;
+        const mapa = {
+            conectado: { cor: 'bg-emerald-400', label: 'Firebase', pulse: '', title: 'Conectado ao Fênix Core — dados sincronizados na nuvem' },
+            sincronizando: { cor: 'bg-amber-400', label: 'Sincronizando...', pulse: ' animate-pulse', title: 'Sincronizando com o Fênix Core...' },
+            offline: { cor: 'bg-rose-400', label: 'Local', pulse: '', title: 'Sem conexão com o Fênix Core — trabalhando só com os dados salvos neste aparelho' }
+        };
+        const s = mapa[estado] || mapa.offline;
+        dot.className = 'w-2 h-2 rounded-full shrink-0 ' + s.cor + s.pulse;
+        texto.innerText = s.label;
+        wrap.title = s.title;
+    }
+
     function mostrarBannerErro(msg) {
         let banner = document.getElementById('bannerErroSync');
         if (!banner) {
@@ -540,10 +568,12 @@
         }
         banner.innerText = msg;
         banner.classList.remove('hidden');
+        atualizarStatusConexao('offline');
     }
     function esconderBannerErro() {
         const banner = document.getElementById('bannerErroSync');
         if (banner) banner.classList.add('hidden');
+        atualizarStatusConexao('conectado');
     }
 
     // Import dinâmico (script principal continua clássico, não-module, pra não quebrar os onclick="")
@@ -617,7 +647,7 @@
             await autenticarEEntrar(user);
         } catch (err) {
             console.error(err);
-            alert('E-mail ou senha inválidos, ou conta ainda não cadastrada no Fênix Core.');
+            alert('Falha ao entrar.\n\nCódigo do erro: ' + (err.code || 'desconhecido') + '\nMensagem: ' + (err.message || err));
         } finally {
             btn.disabled = false;
             btn.innerText = textoOriginal;
@@ -636,12 +666,12 @@
             empresaAtual = vinculo.empresaId;
             obrasModule = FenixCore.criarModuloCatalogoEmpresa(fbDb, empresaAtual, 'obras_terceirizadas', 'id');
             clientesModule = FenixCore.criarModuloCatalogoEmpresa(fbDb, empresaAtual, 'clientes_terceirizados', 'id');
-            esconderBannerErro();
+            atualizarStatusConexao('sincronizando');
             await hidratarDadosRemotos();
             entrarNoApp();
         } catch (err) {
             console.error(err);
-            mostrarBannerErro('⚠️ Erro ao carregar dados da empresa. Trabalhando com os dados salvos neste aparelho.');
+            mostrarBannerErro('⚠️ Erro ao carregar dados da empresa (' + (err.code || err.message || err) + '). Trabalhando com os dados salvos neste aparelho.');
             entrarNoApp();
         }
     }
@@ -670,9 +700,10 @@
 
             localStorage.setItem('clientes_terceirizados', JSON.stringify(clientes));
             localStorage.setItem('obras_terceirizadas', JSON.stringify(obras));
+            esconderBannerErro();
         } catch (err) {
             console.error('Falha ao sincronizar com o Firestore:', err);
-            mostrarBannerErro('⚠️ Falha ao sincronizar com o Fênix Core — mostrando os últimos dados salvos neste aparelho.');
+            mostrarBannerErro('⚠️ Falha ao sincronizar com o Fênix Core (' + (err.code || err.message || err) + ').');
         }
     }
 
